@@ -193,7 +193,10 @@ void task_1()
     ofstream out;
     out.open("task_1.txt");
 
-    out<<total_delay_in_queue/number_of_customer<<"\n"<<total_size_of_queue/clk<<"\n"<<server_utilization/clk<<"\n"<<clk<<endl; 
+    out<<"average delay in queue: "<<total_delay_in_queue/number_of_customer<<"\n";
+    out<<"average number in queue: "<<total_size_of_queue/clk<<"\n";
+    out<<"server utilization: "<<server_utilization/clk<<"\n";
+    out<<"time simulation ended: "<<clk<<endl; 
 
     in.close();
     out.close();
