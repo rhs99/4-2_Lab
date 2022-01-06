@@ -2,14 +2,14 @@
 using namespace std;
 #define MX 4000010
 #define ELEV_CNT 4
-#define ELEV_CAP 12
+#define BUILDING_SZ 12
 
 random_device rd;
 // mt19937 gen(rd());
 // uniform_real_distribution<> urd(0.0, 1.0);
 exponential_distribution<double> ed;
 binomial_distribution<int> binomial(5, 0.5);
-default_random_engine generator;
+default_random_engine generator_expo, generator_bino, generator_flr;
 uniform_int_distribution<> uid(2, 12);
 
 int simulation_termination;
@@ -26,8 +26,8 @@ double delivery[MX], wait[MX], between[MX], elevator[MX], arrive[MX];
 double ret[ELEV_CNT + 1], stop[ELEV_CNT + 1], operate[ELEV_CNT + 1];
 int cur_customers = 0;
 int first[ELEV_CNT + 1];
-int flr_vec[ELEV_CNT + 1][ELEV_CAP + 1];
-int sel_vec[ELEV_CNT + 1][ELEV_CAP + 1];
+int flr_vec[ELEV_CNT + 1][BUILDING_SZ + 1];
+int sel_vec[ELEV_CNT + 1][BUILDING_SZ + 1];
 int eldel[ELEV_CNT + 1];
 int occupy[ELEV_CNT + 1];
 
@@ -39,18 +39,18 @@ int QUELEN = 0;
 
 double get_expo()
 {
-    return ed(generator);
+    return ed(generator_expo);
 }
 
 int get_binomial()
 {
-    int number = binomial(generator);
+    int number = binomial(generator_bino);
     return number + 1;
 }
 
 int get_floor_selection()
 {
-    return uid(generator);
+    return uid(generator_flr);
 }
 
 void read_input()
@@ -77,11 +77,17 @@ void read_input()
 }
 
 void fill_between_and_dest_flr(){
-    int b_sz,d_flr;
+    int b_sz,d_flr,cnt = 0;
     double btwn;
     for(int i=1;i<MX;)
     {
         b_sz = get_binomial();
+
+        // if(cnt<5){
+        //     cout<<"bt_sz "<<b_sz<<endl;
+        //     cnt++;
+        // }
+        
         d_flr = get_floor_selection();
         btwn = get_expo();
         between[i] = btwn;
@@ -107,14 +113,43 @@ int select_elev()
     return -1;
 }
 
-void simulate()
+void init(){
+    TIME = 0.0;
+
+    for(int i=0;i<MX;i++){
+        dest_flr[i] = 0;
+        delivery[i] = wait[i] = between[i] = elevator[i] = arrive[i] = 0.0;
+    }
+
+    for(int i=1;i<=ELEV_CNT;i++){
+        ret[i] = stop[i] = operate[i] = first[i] = eldel[i] = occupy[i] = 0; 
+    }
+
+    cur_customers = 0;
+
+    for(int i=1;i<=ELEV_CNT;i++)
+    {
+        for(int j=1;j<=BUILDING_SZ;j++){
+            flr_vec[i][j] = sel_vec[i][j] = 0;
+        }
+    }
+
+    quecust = 0;
+    startque = 0;
+    que = 0;
+    quetotal = 0;
+    DELTIME = 0, MAXDEL = 0, MAXELEV = 0, QUETIME = 0, ELEVTIME = 0, MAXQUE = 0;
+    QUELEN = 0;
+}
+
+void simulate(int run_no, ofstream &out)
 {
-    int limit = 0, remain = 0, R = 0, N = 0;
+    int limit = 0, remain = 0, R = 0, N = 0,cnt = 0;
     int sel_sum = 0, Max = 0;
     int flr_sum = 0;
     int prev_disembark = 0;
     int prev_door_open_close = 0;
-    int selected_elev;
+    int selected_elev = -1;
 
     cur_customers = 1;
     delivery[cur_customers] = door_holding_time;
@@ -123,6 +158,7 @@ void simulate()
     // dest_flr[cur_customers] = get_floor_selection();
 
     // cout<<between[cur_customers]<<" "<<dest_flr[cur_customers]<<endl;
+
     TIME = between[cur_customers];
 
     for (int i = 1; i <= ELEV_CNT; i++)
@@ -159,6 +195,11 @@ void simulate()
 
         // between[cur_customers] = get_expo();
         // dest_flr[cur_customers] = get_floor_selection();
+
+        // if(cnt<5){
+        //      cout<<between[cur_customers]<<" "<<dest_flr[cur_customers]<<endl;
+        //      cnt++;
+        // }
 
         TIME += between[cur_customers];
         delivery[cur_customers] = door_holding_time;
@@ -270,6 +311,11 @@ void simulate()
 
         // between[cur_customers] = get_expo();
         // dest_flr[cur_customers] = get_floor_selection();
+
+        // if(cnt < 5){
+        //     cout<<between[cur_customers]<<" "<<dest_flr[cur_customers]<<endl;
+        //     cnt++;
+        // }
 
         TIME += between[cur_customers];
         arrive[cur_customers] = TIME;
@@ -441,27 +487,78 @@ void simulate()
     QUETIME /= quetotal;
 
     //36
-    cout<<fixed<<setprecision(0);
 
-    cout<<N<<" "<<DELTIME<<" "<<MAXDEL<<" "<<ELEVTIME<<" "<<MAXELEV<<" "<<QUELEN<<" "<<QUETIME<<" "<<MAXQUE<<endl;
+    out<<fixed<<setprecision(0);
+
+    out<<run_no<<",";
+
+    out<<N<<","<<DELTIME<<","<<MAXDEL<<","<<ELEVTIME<<","<<MAXELEV<<","<<QUELEN<<","<<QUETIME<<","<<MAXQUE<<",";
     for(int i=1;i<=ELEV_CNT;i++)
     {
-        cout<<stop[i]<<" ";
+        out<<stop[i]<<",";
     }
-    cout << endl;
     for(int i=1;i<=ELEV_CNT;i++)
     {
-        cout<<operate[i]/simulation_termination<<" ";
+        out<<operate[i]/simulation_termination<<",";
     }
-    cout<<endl;
+
+    out<<endl;
+}
+
+
+void calc_avg(){
+    ifstream in;
+    in.open("stat.csv");
+
+    double stat[20];
+    memset(stat,0,sizeof(stat));
+
+    double x;
+    char c;
+
+    for(int i=0;i<10;i++)
+    {
+        for(int j=0;j<17;j++)
+        {
+            in>>x>>c;
+            stat[j] += x;
+        }
+    }
+
+    in.close();
+
+    ofstream out;
+    out.open("stat.csv", ios_base::app);
+
+    for(int i=0;i<17;i++)
+    {
+        if(i)
+            out<<(int)(stat[i]/10)<<",";
+        else
+            out<<"-"<<",";
+    }
+ 
+    out.close();
 
 }
 
 int main()
 {
     read_input();
-    fill_between_and_dest_flr();
-    simulate();
+
+    ofstream out;
+    out.open("stat.csv");
+   
+    for(int i=0;i<10;i++){
+        init();
+        fill_between_and_dest_flr();
+        simulate(i+1, out);
+    }
+
+    out.close();
+
+    calc_avg();
+   
 
     return 0;
 }
