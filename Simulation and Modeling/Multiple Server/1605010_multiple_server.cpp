@@ -1,12 +1,14 @@
-#include<bits/stdc++.h>
+#include <bits/stdc++.h>
 using namespace std;
-#define MX 1001
+#define MX 4000010
 #define ELEV_CNT 4
+#define ELEV_CAP 12
 
 random_device rd;
-mt19937 gen(rd());
-uniform_real_distribution<> urd(0.0, 1.0);
-binomial_distribution<int> binomial(5,0.5);
+// mt19937 gen(rd());
+// uniform_real_distribution<> urd(0.0, 1.0);
+exponential_distribution<double> ed;
+binomial_distribution<int> binomial(5, 0.5);
 default_random_engine generator;
 uniform_int_distribution<> uid(2, 12);
 
@@ -16,42 +18,54 @@ int door_holding_time, inter_floor_traveling_time, opening_time, closing_time;
 int embarking_time, disembarking_time;
 double mean_interarrival_time;
 
-
 double TIME = 0.0;
-double delivery[MX],wait[MX],between[MX];
-double ret[ELEV_CNT + 1], stop[ELEV_CNT + 1],operate[ELEV_CNT + 1];
+
+int dest_flr[MX];
+double delivery[MX], wait[MX], between[MX], elevator[MX], arrive[MX];
+
+double ret[ELEV_CNT + 1], stop[ELEV_CNT + 1], operate[ELEV_CNT + 1];
 int cur_customers = 0;
 int first[ELEV_CNT + 1];
-int flr_vec[ELEV_CNT + 1][13];
-int sel_vec[ELEV_CNT + 1][13];
+int flr_vec[ELEV_CNT + 1][ELEV_CAP + 1];
+int sel_vec[ELEV_CNT + 1][ELEV_CAP + 1];
+int eldel[ELEV_CNT + 1];
 int occupy[ELEV_CNT + 1];
-int dest_flr[MX];
 
+int quecust;
+double startque;
+int que, quetotal;
+double DELTIME = 0, MAXDEL = 0, MAXELEV = 0, QUETIME = 0, ELEVTIME = 0, MAXQUE = 0;
+int QUELEN = 0;
 
-double get_expo(double mean){
-    double u = urd(gen);
-    double e = -(mean*log(u));
-    return e;
+double get_expo()
+{
+    return ed(generator);
 }
 
-int get_binomial(){
+int get_binomial()
+{
     int number = binomial(generator);
     return number + 1;
 }
 
-int get_floor_selection(){
-    return uid(gen);
+int get_floor_selection()
+{
+    return uid(generator);
 }
 
-void read_input(){
+void read_input()
+{
     ifstream in;
     in.open("input.txt");
 
-    in>>simulation_termination;
-    in>>number_of_floors>>elevators>>capacity>>batch_size;
-    in>>door_holding_time>>inter_floor_traveling_time>>opening_time>>closing_time;
-    in>>embarking_time>>disembarking_time;
-    in>>mean_interarrival_time;
+    in >> simulation_termination;
+    in >> number_of_floors >> elevators >> capacity >> batch_size;
+    in >> door_holding_time >> inter_floor_traveling_time >> opening_time >> closing_time;
+    in >> embarking_time >> disembarking_time;
+    in >> mean_interarrival_time;
+
+    mean_interarrival_time *= 60;
+    ed = exponential_distribution<double>(mean_interarrival_time);
 
     in.close();
 
@@ -59,93 +73,395 @@ void read_input(){
     // cout<<number_of_floors<<elevators<<capacity<<batch_size<<endl;
     // cout<<door_holding_time<<inter_floor_traveling_time<<opening_time<<closing_time<<endl;
     // cout<<embarking_time<<disembarking_time<<endl;
-    // cout<<mean_interarrival_time<<endl;    
+    // cout<<mean_interarrival_time<<endl;
 }
 
-int select_elev(){
-    for(int i=1;i<=ELEV_CNT;i++){
-        if(TIME >= ret[i]){
+void fill_between_and_dest_flr(){
+    int b_sz,d_flr;
+    double btwn;
+    for(int i=1;i<MX;)
+    {
+        b_sz = get_binomial();
+        d_flr = get_floor_selection();
+        btwn = get_expo();
+        between[i] = btwn;
+        dest_flr[i] = d_flr;
+        for(int j=i+1;j<i+b_sz && j<MX;j++){
+            between[j] = 0;
+            d_flr = get_floor_selection();
+            dest_flr[j] = d_flr;
+        }
+        i=i+b_sz;
+    }
+}
+
+int select_elev()
+{
+    for (int i = 1; i <= ELEV_CNT; i++)
+    {
+        if (TIME >= ret[i])
+        {
             return i;
         }
     }
     return -1;
 }
 
-void simulate(){
-    int limit = 0;
-
+void simulate()
+{
+    int limit = 0, remain = 0, R = 0, N = 0;
+    int sel_sum = 0, Max = 0;
+    int flr_sum = 0;
+    int prev_disembark = 0;
+    int prev_door_open_close = 0;
+    int selected_elev;
 
     cur_customers = 1;
     delivery[cur_customers] = door_holding_time;
-    between[cur_customers] = get_expo(mean_interarrival_time);
-    dest_flr[cur_customers] = get_floor_selection();
+
+    // between[cur_customers] = get_expo();
+    // dest_flr[cur_customers] = get_floor_selection();
+
+    // cout<<between[cur_customers]<<" "<<dest_flr[cur_customers]<<endl;
     TIME = between[cur_customers];
 
-    for(int i=1;i<=ELEV_CNT;i++){
+    for (int i = 1; i <= ELEV_CNT; i++)
+    {
         ret[i] = TIME;
     }
 
     //4
-    while(TIME <= simulation_termination){
-        //5
-        int selected_elev = select_elev();
-
-        if(selected_elev != -1){
-
-            //6
-            first[selected_elev] = cur_customers;
-            occupy[selected_elev] = 0;
-            memset(flr_vec[0],0,sizeof(flr_vec[0]));
-            memset(sel_vec[0],0,sizeof(sel_vec[0]));
-
-            //7
-            step_7:
-            sel_vec[selected_elev][dest_flr[cur_customers]] = 1;
-            flr_vec[selected_elev][dest_flr[cur_customers]] += 1;
-            occupy[selected_elev] += 1;
-
-            //8
-            cur_customers += 1;
-            between[cur_customers] = get_expo(mean_interarrival_time);
-            dest_flr[cur_customers] = get_floor_selection();
-            TIME += between[cur_customers];
-            delivery[cur_customers] = door_holding_time;
-
-            //9
-            for(int i=1;i<=ELEV_CNT;i++){
-                if(TIME >= ret[i]){
-                    ret[i] = TIME;
-                }
-            }
-
-            //10
-            if(between[cur_customers] <= door_holding_time && occupy[selected_elev] < capacity){
-                for(int i=first[selected_elev];i<cur_customers;i++){
-                    delivery[i] += between[cur_customers];
-                }
-                goto step_7;
-            }
-            else{
-                limit = cur_customers-1;
-            }
-
-            //11
-            
-
-
+    while (TIME <= simulation_termination)
+    {
+    //5
+    step_5:
+        selected_elev = select_elev();
+        // if(selected_elev != -1){
+        if (selected_elev == -1)
+        {
+            goto step_19;
         }
-        else{
+        //6
+        first[selected_elev] = cur_customers;
+        occupy[selected_elev] = 0;
+        memset(flr_vec[selected_elev], 0, sizeof(flr_vec[selected_elev]));
+        memset(sel_vec[selected_elev], 0, sizeof(sel_vec[selected_elev]));
 
+    //7
+    step_7:
+        sel_vec[selected_elev][dest_flr[cur_customers]] = 1;
+        flr_vec[selected_elev][dest_flr[cur_customers]] += 1;
+        occupy[selected_elev] += 1;
+
+    //8
+    step_8:
+        cur_customers += 1;
+
+        // between[cur_customers] = get_expo();
+        // dest_flr[cur_customers] = get_floor_selection();
+
+        TIME += between[cur_customers];
+        delivery[cur_customers] = door_holding_time;
+
+        //9
+        for (int i = 1; i <= ELEV_CNT; i++)
+        {
+            if (TIME >= ret[i])
+            {
+                ret[i] = TIME;
+            }
         }
-        
+
+        //10
+        if (between[cur_customers] <= door_holding_time && occupy[selected_elev] < capacity)
+        {
+            for (int i = first[selected_elev]; i < cur_customers; i++)
+            {
+                delivery[i] += between[cur_customers];
+            }
+            goto step_7;
+        }
+        else
+        {
+            limit = cur_customers - 1;
+            goto step_11;
+        }
+
+    //11
+    step_11:
+        for (int i = first[selected_elev]; i <= limit; i++)
+        {
+
+            //12
+            N = dest_flr[i] - 1;
+            prev_disembark = 0;
+            for (int j = 1; j <= N; j++)
+            {
+                prev_disembark += flr_vec[selected_elev][j];
+            }
+            prev_door_open_close = 0;
+            for (int j = 1; j <= N; j++)
+            {
+                prev_door_open_close += sel_vec[selected_elev][j];
+            }
+            elevator[i] = inter_floor_traveling_time * N +
+                          disembarking_time * prev_disembark + disembarking_time +
+                          (opening_time + closing_time) * prev_door_open_close +
+                          opening_time;
+
+            //13
+            delivery[i] += elevator[i];
+
+            //14
+            DELTIME += delivery[i];
+
+            //15
+            if (delivery[i] > MAXDEL)
+            {
+                MAXDEL = delivery[i];
+            }
+
+            //16
+            if (elevator[i] > MAXELEV)
+            {
+                MAXELEV = elevator[i];
+            }
+        }
+
+        //17
+        sel_sum = 0;
+        for (int j = 1; j <= number_of_floors; j++)
+        {
+            sel_sum += sel_vec[selected_elev][j];
+            if (sel_vec[selected_elev][j])
+            {
+                Max = j;
+            }
+        }
+        stop[selected_elev] += sel_sum;
+
+        flr_sum = 0;
+        for (int j = 1; j <= number_of_floors; j++)
+        {
+            flr_sum += flr_vec[selected_elev][j];
+        }
+
+        eldel[selected_elev] = (inter_floor_traveling_time * 2) * (Max - 1) +
+                               (disembarking_time * flr_sum) + (opening_time + closing_time) * sel_sum;
+
+        ret[selected_elev] = TIME + eldel[selected_elev];
+        operate[selected_elev] += eldel[selected_elev];
+
+        //18
+        goto step_5;
+        // }
+        // else{
+
+    //19
+    step_19:
+        quecust = cur_customers;
+        startque = TIME;
+        que = 1;
+        arrive[cur_customers] = TIME;
+
+    //20
+    step_20:
+        cur_customers += 1;
+
+        // between[cur_customers] = get_expo();
+        // dest_flr[cur_customers] = get_floor_selection();
+
+        TIME += between[cur_customers];
+        arrive[cur_customers] = TIME;
+        que += 1;
+
+        //21
+        selected_elev = select_elev();
+        if (selected_elev != -1)
+        {
+            goto step_22;
+        }
+        else
+        {
+            goto step_20;
+        }
+
+    //22
+    step_22:
+        memset(flr_vec[selected_elev], 0, sizeof(flr_vec[selected_elev]));
+        memset(sel_vec[selected_elev], 0, sizeof(sel_vec[selected_elev]));
+        remain = que - capacity;
+
+        //23
+        if (remain <= 0)
+        {
+            R = cur_customers;
+            occupy[selected_elev] = que;
+        }
+        else
+        {
+            R = quecust + capacity - 1;
+            occupy[selected_elev] = capacity;
+        }
+
+        //24
+        for (int i = quecust; i <= R; i++)
+        {
+            sel_vec[selected_elev][dest_flr[i]] = 1;
+            flr_vec[selected_elev][dest_flr[i]] += 1;
+        }
+
+        //25
+        if (que >= QUELEN)
+        {
+            QUELEN = que;
+        }
+
+        //26
+        quetotal += occupy[selected_elev];
+        for (int i = quecust; i <= R; i++)
+        {
+            QUETIME += (TIME - arrive[i]);
+        }
+
+        //27
+        if (TIME - startque >= MAXQUE)
+        {
+            MAXQUE = TIME - startque;
+        }
+
+        //28
+        first[selected_elev] = quecust;
+
+        //29
+        for (int i = first[selected_elev]; i <= R; i++)
+        {
+            delivery[i] = door_holding_time + TIME - arrive[i];
+            wait[i] = TIME - arrive[i];
+        }
+
+        //30
+        if (remain <= 0)
+        {
+            que = 0;
+            goto step_8;
+        }
+        else
+        {
+            limit = R;
+            for (int i = first[selected_elev]; i <= limit; i++)
+            {
+                //12
+                N = dest_flr[i] - 1;
+                prev_disembark = 0;
+                for (int j = 1; j <= N; j++)
+                {
+                    prev_disembark += flr_vec[selected_elev][j];
+                }
+                prev_door_open_close = 0;
+                for (int j = 1; j <= N; j++)
+                {
+                    prev_door_open_close += sel_vec[selected_elev][j];
+                }
+                elevator[i] = inter_floor_traveling_time * N +
+                              disembarking_time * prev_disembark + disembarking_time +
+                              (opening_time + closing_time) * prev_door_open_close +
+                              opening_time;
+
+                //13
+                delivery[i] += elevator[i];
+
+                //14
+                DELTIME += delivery[i];
+
+                //15
+                if (delivery[i] > MAXDEL)
+                {
+                    MAXDEL = delivery[i];
+                }
+
+                //16
+                if (elevator[i] > MAXELEV)
+                {
+                    MAXELEV = elevator[i];
+                }
+
+                //17
+                sel_sum = 0;
+                for (int j = 1; j <= number_of_floors; j++)
+                {
+                    sel_sum += sel_vec[selected_elev][j];
+                    if (sel_vec[selected_elev][j])
+                    {
+                        Max = j;
+                    }
+                }
+                stop[selected_elev] += sel_sum;
+
+                flr_sum = 0;
+                for (int j = 1; j <= number_of_floors; j++)
+                {
+                    flr_sum += flr_vec[selected_elev][j];
+                }
+
+                eldel[selected_elev] = (inter_floor_traveling_time * 2) * (Max - 1) +
+                                       disembarking_time * flr_sum + (opening_time + closing_time) * sel_sum;
+
+                ret[selected_elev] = TIME + eldel[selected_elev];
+                operate[selected_elev] += eldel[selected_elev];
+            }
+
+            goto step_31;
+        }
+
+    //31
+    step_31:
+        que = remain;
+        quecust = R + 1;
+        startque = arrive[R + 1];
+
+        //32
+        if (TIME <= simulation_termination)
+            goto step_20;
+
+        // }
     }
+
+    //33
+    N = cur_customers - que;
+    DELTIME = DELTIME / N;
+
+    //34
+    for (int i = 1; i <= limit; i++)
+    {
+        ELEVTIME += elevator[i] / limit;
+    }
+
+    //35
+    QUETIME /= quetotal;
+
+    //36
+    cout<<fixed<<setprecision(0);
+
+    cout<<N<<" "<<DELTIME<<" "<<MAXDEL<<" "<<ELEVTIME<<" "<<MAXELEV<<" "<<QUELEN<<" "<<QUETIME<<" "<<MAXQUE<<endl;
+    for(int i=1;i<=ELEV_CNT;i++)
+    {
+        cout<<stop[i]<<" ";
+    }
+    cout << endl;
+    for(int i=1;i<=ELEV_CNT;i++)
+    {
+        cout<<operate[i]/simulation_termination<<" ";
+    }
+    cout<<endl;
 
 }
 
-int main(){
-
+int main()
+{
     read_input();
-     
+    fill_between_and_dest_flr();
+    simulate();
 
     return 0;
 }
